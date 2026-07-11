@@ -1,0 +1,12 @@
+{
+  "promptDelete": true,
+  "alwaysUpdateLinks": true,
+  "useMarkdownLinks": false,
+  "newLinkFormat": "shortest",
+  "attachmentFolderPath": "07_Outputs/Attachments",
+  "showFrontmatter": true,
+  "showLineNumber": true,
+  "foldHeading": true,
+  "foldIndent": true,
+  "trashOption": "system"
+}
