@@ -185,6 +185,59 @@ check_dependencies() {
     fi
   fi
   echo ""
+
+  # --- jq ---
+  # pre-bash-guard.sh（危険コマンド検知）・audit-log.sh（監査ログ）・
+  # vault-activity-log.sh（Vault自動記録）はすべて jq でフックの入力JSONを
+  # パースしている。jq が無いとこれらは黙って機能しなくなる（安全機能の無効化）。
+  if command -v jq >/dev/null 2>&1; then
+    echo "✅ jq が見つかりました"
+  else
+    echo "⚠️  jq が見つかりません"
+    echo "   jq が無いと、危険コマンドを検知してブロックする安全機能（pre-bash-guard.sh）や"
+    echo "   監査ログ・Vault自動記録（audit-log.sh / vault-activity-log.sh）が動作しません。"
+
+    if [ "$OPT_DRY_RUN" -eq 1 ]; then
+      echo "   (dry-run: インストールは実行しません)"
+    else
+      local do_install_jq="n"
+      if [ "$OPT_YES" -eq 1 ]; then
+        if [ "$OPT_INSTALL_DEPS" -eq 1 ]; then
+          do_install_jq="y"
+        else
+          do_install_jq="n"
+        fi
+      elif command -v brew >/dev/null 2>&1; then
+        printf "   今すぐ brew install jq を実行しますか？ [y/N]: "
+        read -r do_install_jq
+      fi
+
+      case "$do_install_jq" in
+        y|Y|yes|YES)
+          if command -v brew >/dev/null 2>&1; then
+            echo "   インストールを実行します..."
+            brew install jq
+          else
+            echo "   Homebrewが見つからないため自動インストールできません。https://jqlang.org/download/ からインストールしてください。"
+          fi
+          ;;
+        *)
+          if command -v brew >/dev/null 2>&1; then
+            echo "   スキップしました。手動でインストールする場合: brew install jq"
+          else
+            echo "   Homebrewが見つかりません。手動でインストールしてください: https://jqlang.org/download/"
+          fi
+          ;;
+      esac
+
+      if ! command -v jq >/dev/null 2>&1; then
+        echo ""
+        echo "   ⚠️  重要: jq をインストールしないまま使うと、危険コマンドのブロックと監査ログが"
+        echo "   『エラーにならず素通しされる』状態になります。できるだけ早くインストールしてください。"
+      fi
+    fi
+  fi
+  echo ""
 }
 
 # ---------------------------------------------------------------------------
@@ -194,44 +247,77 @@ check_dependencies() {
 ask_vault_path() {
   local chosen=""
 
-  if [ -n "$VAULT_ARG" ]; then
-    chosen="$VAULT_ARG"
-  elif [ "$OPT_YES" -eq 1 ]; then
-    chosen="$DEFAULT_VAULT"
-  else
-    echo "--- Obsidian Vaultの作成場所 ---"
-    printf "保存先を入力してください（そのままEnterで既定値） [%s]: " "$DEFAULT_VAULT"
-    read -r chosen
-    [ -z "$chosen" ] && chosen="$DEFAULT_VAULT"
-  fi
+  while :; do
+    if [ -n "$VAULT_ARG" ]; then
+      chosen="$VAULT_ARG"
+    elif [ "$OPT_YES" -eq 1 ]; then
+      chosen="$DEFAULT_VAULT"
+    else
+      echo "--- Obsidian Vaultの作成場所 ---"
+      printf "保存先を入力してください（そのままEnterで既定値） [%s]: " "$DEFAULT_VAULT"
+      read -r chosen
+      [ -z "$chosen" ] && chosen="$DEFAULT_VAULT"
+    fi
 
-  # 先頭の ~ を展開
-  case "$chosen" in
-    "~")
-      chosen="$HOME"
-      ;;
-    "~/"*)
-      chosen="$HOME/${chosen#\~/}"
-      ;;
-  esac
+    # 先頭の ~ を展開
+    case "$chosen" in
+      "~")
+        chosen="$HOME"
+        ;;
+      "~/"*)
+        chosen="$HOME/${chosen#\~/}"
+        ;;
+    esac
 
-  case "$chosen" in
-    /*)
-      : # 絶対パスでOK
-      ;;
-    *)
-      echo "エラー: Vaultパスは絶対パス（/ または ~ から始まる）で指定してください: $chosen"
+    case "$chosen" in
+      /*)
+        : # 絶対パスでOK
+        ;;
+      *)
+        echo "エラー: Vaultパスは絶対パス（/ または ~ から始まる）で指定してください: $chosen"
+        exit 1
+        ;;
+    esac
+
+    local parent
+    parent="$(dirname "$chosen")"
+    if [ ! -d "$parent" ]; then
+      echo "エラー: 親ディレクトリが存在しません: $parent"
+      echo "先にこのディレクトリを作成してから再実行してください。"
       exit 1
-      ;;
-  esac
+    fi
 
-  local parent
-  parent="$(dirname "$chosen")"
-  if [ ! -d "$parent" ]; then
-    echo "エラー: 親ディレクトリが存在しません: $parent"
-    echo "先にこのディレクトリを作成してから再実行してください。"
-    exit 1
-  fi
+    # $HOME/.claude 配下、またはキットのソースディレクトリ（SOURCE_DIR）配下を
+    # Vaultにするのは禁止する。設定ファイル・フックスクリプト・インストーラー本体と
+    # Obsidian Vaultのノート群が同じ場所に混ざると、双方が壊れる原因になる。
+    local forbidden=""
+    case "$chosen" in
+      "$HOME/.claude"|"$HOME/.claude"/*)
+        forbidden="$HOME/.claude"
+        ;;
+    esac
+    if [ -z "$forbidden" ]; then
+      case "$chosen" in
+        "$SOURCE_DIR"|"$SOURCE_DIR"/*)
+          forbidden="$SOURCE_DIR（キットのソースディレクトリ）"
+          ;;
+      esac
+    fi
+
+    if [ -n "$forbidden" ]; then
+      echo "エラー: Vaultの保存先に「$chosen」は指定できません（$forbidden の配下のため）。"
+      echo "Claude Codeの設定ディレクトリ・キットのソースディレクトリとは別の場所を指定してください。"
+      if [ -n "$VAULT_ARG" ] || [ "$OPT_YES" -eq 1 ]; then
+        exit 1
+      fi
+      echo "別の場所を入力し直してください。"
+      echo ""
+      chosen=""
+      continue
+    fi
+
+    break
+  done
 
   VAULT_PATH="$chosen"
   echo ""
@@ -435,8 +521,12 @@ generate_settings_json() {
   fi
 
   if [ -f "$dest" ]; then
-    cp "$dest" "$dest.pre-neo-kit"
-    echo "  既存の settings.json を保存しました: $dest.pre-neo-kit"
+    if [ -f "$dest.pre-neo-kit" ]; then
+      echo "  $dest.pre-neo-kit は既に存在するため上書きしません（初回実行時のオリジナルを保持）"
+    else
+      cp "$dest" "$dest.pre-neo-kit"
+      echo "  既存の settings.json を保存しました: $dest.pre-neo-kit"
+    fi
     echo "  差分を見るには: diff \"$dest.pre-neo-kit\" \"$dest\""
   fi
 

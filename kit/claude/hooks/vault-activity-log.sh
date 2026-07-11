@@ -98,7 +98,7 @@ related:
 
 > Neo（ClaudeCode_Agent）が実行したツール操作の自動記録。
 > Read/Grep/Glob 等の検索系は除外。Bash/Edit/Write/Agent/Skill/Task+ を記録。
-> 人間向け Daily Briefing（思考整理）は別ファイル（\`${TODAY}.md\`）。
+> 人間向け Daily Briefing（思考整理）は別ファイル（\`${TODAY}-summary.md\`）。
 
 ## ツール実行ログ
 

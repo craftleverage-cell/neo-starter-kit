@@ -3,8 +3,13 @@
 # SessionEnd hook for Claude Code — reads today's auto activity log and
 # regenerates a human-readable daily summary (Markdown) in the Vault.
 #
-# Source : 06_Logs/Daily_Briefing/YYYY-MM-DD-activity.md  (append-only op log)
-# Output : 06_Logs/Daily_Briefing/YYYY-MM-DD.md           (idempotent full rewrite)
+# Source : 06_Logs/Daily_Briefing/YYYY-MM-DD-activity.md          (append-only op log)
+# Output : 06_Logs/Daily_Briefing/YYYY-MM-DD-summary.md           (idempotent full rewrite)
+#
+# NOTE: The output filename is deliberately NOT YYYY-MM-DD.md — that path is
+# Obsidian's own Daily Note (see kit/vault/.obsidian/daily-notes.json). Using
+# the same name would silently overwrite the user's hand-written daily note
+# every SessionEnd. Keep this suffix distinct from the Daily Notes format.
 #
 # Pure text analysis. No LLM / API calls. Safe to run many times per day.
 #
@@ -29,7 +34,7 @@ DEVROOT="ClaudeCode"
 LOG_DIR="$VAULT/06_Logs/Daily_Briefing"
 DATE=$(date +%F)
 ACTIVITY="$LOG_DIR/${DATE}-activity.md"
-SUMMARY="$LOG_DIR/${DATE}.md"
+SUMMARY="$LOG_DIR/${DATE}-summary.md"
 
 # Vault 未同期 / 当日ログ無しは静かに退避
 if [ ! -d "$LOG_DIR" ]; then

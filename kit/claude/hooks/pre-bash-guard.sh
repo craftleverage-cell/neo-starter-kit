@@ -9,6 +9,24 @@
 #      curl|sh / base64 -d | sh / /dev/tcp/ 等
 #   3. python *.py の中身に urllib/requests/subprocess/os.system 等の危険パターン
 
+# KNOWN LIMITATION: this hook depends on `jq` to parse the tool_input JSON.
+# jq is not installed by default on macOS. If it's missing, we cannot read
+# COMMAND at all, so every check below is skipped and the command is allowed
+# through unexamined (fail-open — a crashing/erroring hook can block Claude
+# Code entirely, which is worse than silently skipping this one safety net).
+# We warn once (via a marker file) instead of on every single Bash call,
+# since this hook fires before every Bash invocation and a repeated warning
+# would be unusable spam. install.sh checks for jq and offers to install it;
+# see README ② for the dependency note.
+if ! command -v jq >/dev/null 2>&1; then
+  JQ_WARN_MARKER="$HOME/.claude/hooks/.jq-missing-warned"
+  if [ ! -e "$JQ_WARN_MARKER" ]; then
+    echo "WARNING: jq is not installed — pre-bash-guard.sh cannot inspect commands and will allow everything through unexamined. Run: brew install jq (this warning will not repeat until the marker file is removed: $JQ_WARN_MARKER)" >&2
+    touch "$JQ_WARN_MARKER" 2>/dev/null
+  fi
+  exit 0
+fi
+
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
@@ -39,8 +57,8 @@ fi
 
 # ===== Python スクリプト実行時の内容検査 (既存ロジック) =====
 SCRIPT_PATH=""
-if echo "$COMMAND" | grep -qE '^python3?\s+\S+\.py'; then
-  SCRIPT_PATH=$(echo "$COMMAND" | sed -E 's/^python3?\s+//' | awk '{print $1}')
+if echo "$COMMAND" | grep -qE '^python3?[[:space:]]+[^[:space:]]+\.py'; then
+  SCRIPT_PATH=$(echo "$COMMAND" | sed -E 's/^python3?[[:space:]]+//' | awk '{print $1}')
 fi
 
 if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then

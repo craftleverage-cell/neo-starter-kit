@@ -1,12 +1,6 @@
 ---
 name: security-audit
 description: "Claude Code許可設定のレッドチーム/ブルーチーム型セキュリティ監査"
-metadata:
-  {
-    "openclaw": {
-      "emoji": "🛡️"
-    }
-  }
 ---
 
 # Security Audit — Claude Code 許可設定監査
